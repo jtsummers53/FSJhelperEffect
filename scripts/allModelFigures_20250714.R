@@ -21,178 +21,220 @@ load("data/FitnessDataSet_20250714.rdata")
 #### SURVIVAL
 
 # predict survival for male and female breeders
-# predict for best performing full female model
-Surv.pred <- ggpredict(B.F.model,
+# predict for sex based female model
+Surv.pred <- ggpredict(B.F.sex.model,
                          c("num.helpers [all]",
                            # predict between scenarios with all male (0)
                            # and all female (1) helpers
-                           "sex.ratio [0, 1]",
-                           # predict between scenarios with all unrelated (0)
-                           # and all related (1) helpers
-                           "mean.relate [0, 1]"),
+                           "sex.ratio [0, 1]"),
                        # bias_correction adjusts values by random effects
                          bias_correction = TRUE) %>%
   data.frame() %>%
-  mutate(Bsex = "F") %>%
-  # repeat for best performing full male model
-  bind_rows(ggpredict(B.M.2.model,
+  mutate(Bsex = "F", var = "sex") %>%
+  # repeat for sex based male model
+  bind_rows(ggpredict(B.M.sex.model,
                       c("num.helpers [all]",
-                        "sex.ratio [0, 1]",
+                        "sex.ratio [0, 1]"),
+                      bias_correction = TRUE) %>%
+              data.frame() %>%
+              mutate(Bsex = "M", var = "sex")) %>%
+  # repeat for relatedness based female model
+  bind_rows(ggpredict(B.F.relate.model,
+                      c("num.helpers [all]",
+                        # predict between scenarios with all related (0)
+                        # and all unrelated (1) helpers
                         "mean.relate [0, 1]"),
                       bias_correction = TRUE) %>%
               data.frame() %>%
-              mutate(Bsex = "M")) %>%
-  # predict for best performing full offspring model
-  bind_rows(ggpredict(O.model,
+              mutate(Bsex = "F", var = "relate")) %>%
+  # repeat for relatedness based male model
+  bind_rows(ggpredict(B.M.relate.model,
                       c("num.helpers [all]",
-                        "sex.ratio [0, 1]",
+                        # predict between scenarios with all related (0)
+                        # and all unrelated (1) helpers
                         "mean.relate [0, 1]"),
                       bias_correction = TRUE) %>%
               data.frame() %>%
-              mutate(Bsex = "A")) %>%
-  # predict for base male breeder model
+              mutate(Bsex = "M", var = "relate")) %>%
+  # repeat for base male model
   bind_rows(ggpredict(B.M.null.model,
                       c("num.helpers [all]"),
                       bias_correction = TRUE) %>%
               data.frame() %>%
-              mutate(Bsex = "M", group = "B")) %>%
-  # predict for base female breeder model
+              mutate(Bsex = "M", group = "B", var = "null")) %>%
+  # repeat for base female model
   bind_rows(ggpredict(B.F.null.model,
                       c("num.helpers [all]"),
                       bias_correction = TRUE) %>%
               data.frame() %>%
-              mutate(Bsex = "F", group = "B")) %>%
-  # predict for base offspring model
-  bind_rows(ggpredict(O.null.model,
-                      c("num.helpers [all]"),
-                      bias_correction = TRUE) %>%
-              data.frame() %>%
-              mutate(Bsex = "A", group = "B", )) %>%
+              mutate(Bsex = "F", group = "B", var = "null")) %>%
   # adjust labels for plotting
   mutate(num.helpers = x,
-         Hsex = if_else(group == "0", "M",
-                        if_else(group == "1", "F", group)),
-         mean.relate = if_else(is.na(facet), "A",
-                               if_else(facet == "0", "U", "R")))
+         group = if_else(var == "relate",
+                         if_else(group == "0", "U", "R"),
+                         if_else(var == "sex",
+                                 if_else(group == "0", "M", "F"),
+                                 "B")),
+         var = factor(var, levels = c("null", "sex", "relate")))
 
 # plot breeder survival prediction curves
 Breed_Surv.plot <- ggplot(Surv.pred %>%
                             # limit number of helpers to maximum
                             # number of single-sex helpers observed (4)
-                      filter(num.helpers <= 4, Bsex != "A"),
+                      filter(num.helpers <= 5),
                     aes(x = num.helpers, y = predicted,
-                        col = Hsex, fill = Hsex)) +
+                        col = group, fill = group)) +
   geom_line(linewidth = 0.5) +
   # add 95% confidence intervals
   geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, col = NA) +
-  scale_color_manual(values = c(F = "#FF2B0F", M = "#009AC5", B = "#754D98"),
-                     labels = c(F = "Female", M = "Male", B = "Both")) +
-  scale_fill_manual(values = c(F = "#FF2B0F", M = "#009AC5", B = "#754D98"),
-                    labels = c(F = "Female", M = "Male", B = "Both")) +
+  scale_color_manual(values = c(F = "#FF2B0F", M = "#009AC5", B = "#754D98",
+                                R = "#2DA93C", U = "#8D5802"),
+                     labels = c(F = "Female", M = "Male", B = "All",
+                                R = "Related", U = "Unrelated")) +
+  scale_fill_manual(values = c(F = "#FF2B0F", M = "#009AC5", B = "#754D98",
+                               R = "#2DA93C", U = "#8D5802"),
+                    labels = c(F = "Female", M = "Male", B = "All",
+                               R = "Related", U = "Unrelated")) +
   # add horizontal line showing predicted survival with 0 helpers
-  geom_hline(data = group_by(Surv.pred %>% filter(Bsex != "A"), Bsex) %>%
+  geom_hline(data = group_by(Surv.pred, Bsex) %>%
                summarize(zero.helpers = predicted[1]),
              aes(yintercept = zero.helpers), col = "black", lty = "dashed") +
   labs(x = "# of Helpers", y = "Predicted Breeder Survival",
-       fill = "Helper Sex",
-       col = "Helper Sex") +
-  facet_grid(Bsex~mean.relate,
+       fill = "Helpers",
+       col = "Helpers") +
+  facet_grid(Bsex~var,
              labeller = labeller(Bsex = c(F = "Female Breeder Survival",
-                                          M = "Male Breeder Survival",
-                                          A = "Juvenile Survival"),
-                                 mean.relate = c(U = "Unrelated Helpers",
-                                                 R = "Related Helpers",
-                                                 A = "All Helpers"))) +
+                                          M = "Male Breeder Survival"),
+                                 var = c(null = "Total Helper #",
+                                        sex = "Helper Sex",
+                                      relate = "Helper\nRelatedness"))) +
   theme_minimal() +
-  theme(text = element_text(size = 9),
+  theme(text = element_text(size = 12),
         panel.border = element_rect(fill = NA),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank())
 
 ggsave(filename = "figures/Figure1_20250714.pdf",
        Breed_Surv.plot,
-       width = 6.5,
+       width = 5,
        height = 5,
        units = "in")
 
 ggsave(filename = "figures/Figure1_20250714.png",
        Breed_Surv.plot,
-       width = 6.5,
-       height = 5,
+       width = 5,
+       height = 4,
        units = "in",
        dpi = 500)
 
 # Follow-up offspring territory area analyses
 
-# predict offspring survival based on territory area
+# predict offspring survival
+# predict for sex based model
+O.pred <- ggpredict(O.sex.model,
+                       c("num.helpers [all]",
+                         # predict between scenarios with all male (0)
+                         # and all female (1) helpers
+                         "sex.ratio [0, 1]"),
+                       # bias_correction adjusts values by random effects
+                       bias_correction = TRUE) %>%
+  data.frame() %>%
+  mutate(var = "sex") %>%
+  # repeat for relatedness based model
+  bind_rows(ggpredict(O.relate.model,
+                      c("num.helpers [all]",
+                        # predict between scenarios with all related (0)
+                        # and all unrelated (1) helpers
+                        "mean.relate [0, 1]"),
+                      bias_correction = TRUE) %>%
+              data.frame() %>%
+              mutate(var = "relate")) %>%
+  # repeat for base model
+  bind_rows(ggpredict(O.null.model,
+                      c("num.helpers [all]"),
+                      bias_correction = TRUE) %>%
+              data.frame() %>%
+              mutate(group = "B", var = "null")) %>%
+  # adjust labels for plotting
+  mutate(num.helpers = x,
+         group = if_else(var == "relate",
+                         if_else(group == "0", "U", "R"),
+                         if_else(var == "sex",
+                                 if_else(group == "0", "M", "F"),
+                                 "B")),
+         var = factor(var, levels = c("null", "sex", "relate")))
+
+# predict offspring survival using best performing model
 O.surv.ha <- ggpredict(O.ha.sex.model, 
                        # predict over standardized 1st quartile,
                        # mean, and 3rd quartile values
                        c("num.helpers [all]", "sex.ratio [0, 1]",
-                                           "ha [-0.717, 0, 0.583]"),
+                                           "ha [9.8, 14.1, 17.7]"),
                        bias_correction = TRUE) %>%
   data.frame() %>%
-  # predict offspring survival based on territory area using base model
-  bind_rows(ggpredict(O.null.ha.model,
-                      c("num.helpers [all]", "ha [-0.717, 0, 0.583]"),
-                      bias_correction = TRUE) %>%
-              data.frame() %>%
-              mutate(facet = group, group = "B")) %>%
   mutate(num.helpers = x,
-         Hsex = if_else(group == "0", "M",
+         group = if_else(group == "0", "M",
                         if_else(group == "1", "F", group)),
          ha = facet)
 
 # create offspring survival plot
-Off_Surv.plot <- ggplot(Surv.pred %>%
-                            filter(num.helpers <= 4, Bsex == "A"),
+Off_Surv.plot <- ggplot(O.pred %>%
+                            filter(num.helpers <= 5),
                           aes(x = num.helpers, y = predicted,
-                              col = Hsex, fill = Hsex)) +
+                              col = group, fill = group)) +
   geom_line(linewidth = 0.5) +
   geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, col = NA) +
-  scale_color_manual(values = c(F = "#FF2B0F", M = "#009AC5", B = "#754D98"),
-                     labels = c(F = "Female", M = "Male", B = "Both")) +
-  scale_fill_manual(values = c(F = "#FF2B0F", M = "#009AC5", B = "#754D98"),
-                    labels = c(F = "Female", M = "Male", B = "Both")) +
-  geom_hline(data = group_by(Surv.pred %>% filter(Bsex == "A"), Bsex) %>%
+  scale_color_manual(values = c(F = "#FF2B0F", M = "#009AC5", B = "#754D98",
+                                R = "#2DA93C", U = "#8D5802"),
+                     labels = c(F = "Female", M = "Male", B = "All",
+                                R = "Related", U = "Unrelated")) +
+  scale_fill_manual(values = c(F = "#FF2B0F", M = "#009AC5", B = "#754D98",
+                               R = "#2DA93C", U = "#8D5802"),
+                    labels = c(F = "Female", M = "Male", B = "All",
+                               R = "Related", U = "Unrelated")) +
+  geom_hline(data = O.pred %>%
                summarize(zero.helpers = predicted[1]),
              aes(yintercept = zero.helpers), col = "black", lty = "dashed") +
-  labs(x = "# of Helpers", y = "Predicted Offspring Survival",
-       fill = "Helper Sex",
-       col = "Helper Sex") +
-  facet_grid(.~mean.relate,
-             labeller = labeller(mean.relate = c(U = "Unrelated Helpers",
-                                                 R = "Related Helpers",
-                                                 A = "All Helpers"))) +
+  labs(x = "# of Helpers", y = "Predicted\nOffspring Survival",
+       fill = "Helpers",
+       col = "Helpers") +
+  facet_grid(.~var,
+             labeller = labeller(var = c(null = "Total Helper #",
+                                         sex = "Helper Sex",
+                                         relate = "Helper\nRelatedness"))) +
   theme_minimal() +
-  theme(text = element_text(size = 9),
+  theme(text = element_text(size = 12),
         panel.border = element_rect(fill = NA),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank())
 
 # create offspring survival plot predicted over territory area
 Off_Surv_ha.plot <- ggplot(O.surv.ha %>%
-                           filter(num.helpers <= 4, Hsex != "B"),
+                           filter(num.helpers <= 5),
                          aes(x = num.helpers, y = predicted,
-                             col = Hsex, fill = Hsex)) +
+                             col = group, fill = group)) +
   geom_line(linewidth = 0.5) +
   geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, col = NA) +
-  scale_color_manual(values = c(F = "#FF2B0F", M = "#009AC5", B = "#754D98"),
-                     labels = c(F = "Female", M = "Male", B = "Both")) +
-  scale_fill_manual(values = c(F = "#FF2B0F", M = "#009AC5", B = "#754D98"),
-                    labels = c(F = "Female", M = "Male", B = "Both")) +
+  scale_color_manual(values = c(F = "#FF2B0F", M = "#009AC5", B = "#754D98",
+                                R = "#2DA93C", U = "#8D5802"),
+                     labels = c(F = "Female", M = "Male", B = "All",
+                                R = "Related", U = "Unrelated")) +
+  scale_fill_manual(values = c(F = "#FF2B0F", M = "#009AC5", B = "#754D98",
+                               R = "#2DA93C", U = "#8D5802"),
+                    labels = c(F = "Female", M = "Male", B = "All",
+                               R = "Related", U = "Unrelated")) +
   geom_hline(data = group_by(O.surv.ha, ha) %>%
                summarize(zero.helpers = predicted[1]),
              aes(yintercept = zero.helpers), col = "black", lty = "dashed") +
-  labs(x = "# of Helpers", y = "Predicted Offspring Survival",
-       fill = "Helper Sex",
-       col = "Helper Sex") +
+  labs(x = "# of Helpers", y = "Predicted\nOffspring Survival",
+       fill = "Helpers",
+       col = "Helpers") +
   facet_grid(.~ha,
-             labeller = labeller(ha = c("-0.717" = "Small Territory",
-                                          "0" = "Average Territory",
-                                          "0.583" = "Large Territory"))) +
+             labeller = labeller(ha = c("9.8" = "Small Territory",
+                                          "14.1" = "Average Territory",
+                                          "17.7" = "Large Territory"))) +
   theme_minimal() +
-  theme(text = element_text(size = 9),
+  theme(text = element_text(size = 12),
         panel.border = element_rect(fill = NA),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
@@ -205,13 +247,13 @@ Off.plot <- Off_Surv.plot/Off_Surv_ha.plot +
 
 ggsave(filename = "figures/Figure2_20250714.pdf",
        Off.plot,
-       width = 6.5,
+       width = 6.96,
        height = 5,
        units = "in")
 
 ggsave(filename = "figures/Figure2_20250714.png",
        Off.plot,
-       width = 6.5,
+       width = 6.96,
        height = 5,
        units = "in",
        dpi = 500)
@@ -219,7 +261,7 @@ ggsave(filename = "figures/Figure2_20250714.png",
 # ARS plot
 
 # predict # of offspring produced (annual reproductive success, ARS)
-# using best performing model
+# using best performing base model
 ARS.pred <- ggpredict(ARS.null.2.model,
                        c("num.helpers [all]"),
                        bias_correction = TRUE,
@@ -228,58 +270,71 @@ ARS.pred <- ggpredict(ARS.null.2.model,
                       # the abundance of zeros
                       type = "zero_inflated") %>%
   data.frame() %>%
-  mutate(model = "B", group = "B") %>%
-  # repeat with best performing full model
-  bind_rows(ggpredict(ARS.2.model,
+  mutate(var = "null", group = "B") %>%
+  # repeat with sex based model
+  bind_rows(ggpredict(ARS.sex.model,
                       c("num.helpers [all]",
-                        "sex.ratio [0, 1]",
+                        "sex.ratio [0, 1]"),
+                      bias_correction = TRUE,
+                      type = "zero_inflated") %>%
+              data.frame() %>%
+              mutate(var = "sex")) %>%
+  # repeat with relatedness based model
+  bind_rows(ggpredict(ARS.relate.model,
+                      c("num.helpers [all]",
                         "mean.relate [0, 1]"),
                       bias_correction = TRUE,
                       type = "zero_inflated") %>%
               data.frame() %>%
-              mutate(model = "F")) %>%
+              mutate(var = "relate")) %>%
   mutate(num.helpers = x,
-         Hsex = if_else(group == "0", "M",
-                        if_else(group == "1", "F", group)),
-         mean.relate = if_else(is.na(facet), "A",
-                               if_else(facet == "0", "U", "R")))
+         group = if_else(var == "relate",
+                         if_else(group == "0", "U", "R"),
+                         if_else(var == "sex",
+                                 if_else(group == "0", "M", "F"),
+                                 "B")),
+         var = factor(var, levels = c("null", "sex", "relate")))
 
 # plot prediction of # of offspring produced
 ARS.plot <- ggplot(ARS.pred %>%
-                            filter(num.helpers <= 4),
+                            filter(num.helpers <= 5),
                           aes(x = num.helpers, y = predicted,
-                              col = Hsex, fill = Hsex)) +
+                              col = group, fill = group)) +
   geom_line(linewidth = 0.5) +
   geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, col = NA) +
-  scale_color_manual(values = c(F = "#FF2B0F", M = "#009AC5", B = "#754D98"),
-                     labels = c(F = "Female", M = "Male", B = "Both")) +
-  scale_fill_manual(values = c(F = "#FF2B0F", M = "#009AC5", B = "#754D98"),
-                    labels = c(F = "Female", M = "Male", B = "Both")) +
-  geom_hline(data = group_by(ARS.pred, model) %>%
+  scale_color_manual(values = c(F = "#FF2B0F", M = "#009AC5", B = "#754D98",
+                                R = "#2DA93C", U = "#8D5802"),
+                     labels = c(F = "Female", M = "Male", B = "All",
+                                R = "Related", U = "Unrelated")) +
+  scale_fill_manual(values = c(F = "#FF2B0F", M = "#009AC5", B = "#754D98",
+                               R = "#2DA93C", U = "#8D5802"),
+                    labels = c(F = "Female", M = "Male", B = "All",
+                               R = "Related", U = "Unrelated")) +
+  geom_hline(data = group_by(ARS.pred, var) %>%
                summarize(zero.helpers = predicted[1]),
              aes(yintercept = zero.helpers), col = "black", lty = "dashed") +
   labs(x = "# of Helpers", y = "Predicted # of Nestlings Produced",
-       fill = "Helper Sex",
-       col = "Helper Sex") +
-  facet_grid(.~mean.relate,
-             labeller = labeller(mean.relate = c(U = "Unrelated Helpers",
-                                                 R = "Related Helpers",
-                                                 A = "All Helpers"))) +
+       fill = "Helpers",
+       col = "Helpers") +
+  facet_grid(.~var,
+             labeller = labeller(var = c(null = "Total Helper #",
+                                         sex = "Helper Sex",
+                                         relate = "Helper\nRelatedness"))) +
   theme_minimal() +
-  theme(text = element_text(size = 9),
+  theme(text = element_text(size = 12),
         panel.border = element_rect(fill = NA),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank())
 
 ggsave(filename = "figures/FigureS3_20250714.pdf",
        ARS.plot,
-       width = 6.5,
+       width = 5,
        height = 3,
        units = "in")
 
 ggsave(filename = "figures/FigureS3_20250714.png",
        ARS.plot,
-       width = 6.5,
+       width = 5,
        height = 3,
        units = "in",
        dpi = 500)
@@ -294,40 +349,34 @@ BSurvModelKey <- c("(Intercept)" = "Intercept",
                   "ha" = "Territory Area",
                   "num.helpers" = "# of Helpers",
                   "I(num.helpers^2)" = "# of Helpers^2",
-                  "num.helpers:mean.relate" = "Related Helper Ratio",
-                  "I(num.helpers^2):mean.relate" = "Related Helper Ratio\nNon-Linear Term",
                   "num.helpers:sex.ratio" = "Helper Sex Ratio",
-                  "I(num.helpers^2):sex.ratio" = "Helper Sex Ratio\n Non-Linear Term",
+                  "num.helpers:mean.relate" = "Related Helper Ratio",
                   "SD (Intercept Year)" = "Year",
                   "SD (Intercept Terr)" = "Territory ID",
                   "SD (Intercept USFWS)" = "Individual ID")
 
 # breeder survival models
-modelsummary(list("Linear" = B.M.null.model,
+modelsummary(list("Base" = B.M.null.model,
                   "Non-Linear" = B.M.null.2.model,
-                  "Linear" = B.M.model,
-                  "Non-Linear" = B.M.2.model),
+                  "Helper Sex" = B.M.sex.model,
+                  "Helper Relatedness" = B.M.relate.model),
              stars = c("*" = 0.05, "**" = 0.01, "***" = 0.001),
              coef_map = BSurvModelKey,
              gof_omit = "ICC",
              output = "flextable") %>%
-  hline(c(22, 25)) %>%
-  add_header_row(top = TRUE, values = c("", "Base Model", "Full Model"), 
-                 colwidths = c(1, 2, 2)) %>%
+  hline(c(18, 21)) %>%
   autofit() %>%
   save_as_docx(path = "figures/BS_M_ModelTable_20250714.docx")
 
-modelsummary(list("Linear" = B.F.null.model,
+modelsummary(list("Base" = B.F.null.model,
                   "Non-Linear" = B.F.null.2.model,
-                  "Linear" = B.F.model,
-                  "Non-Linear" = B.F.2.model),
+                  "Helper Sex" = B.F.sex.model,
+                  "Helper Relatedness" = B.F.relate.model),
              stars = c("*" = 0.05, "**" = 0.01, "***" = 0.001),
              coef_map = BSurvModelKey,
              gof_omit = "ICC",
              output = "flextable") %>%
-  hline(c(22, 25)) %>%
-  add_header_row(top = TRUE, values = c("", "Base Model", "Full Model"), 
-                 colwidths = c(1, 2, 2)) %>%
+  hline(c(18, 21)) %>%
   autofit() %>%
   save_as_docx(path = "figures/BS_F_ModelTable_20250714.docx")
 
@@ -339,26 +388,22 @@ OSurvModelKey <- c("(Intercept)" = "Intercept",
                    "ha" = "Territory Area",
                    "num.helpers" = "# of Helpers",
                    "I(num.helpers^2)" = "# of Helpers^2",
-                   "num.helpers:mean.relate" = "Related Helper Ratio",
-                   "I(num.helpers^2):mean.relate" = "Related Helper Ratio\nNon-Linear Term",
                    "num.helpers:sex.ratio" = "Helper Sex Ratio",
-                   "I(num.helpers^2):sex.ratio" = "Helper Sex Ratio\n Non-Linear Term",
+                   "num.helpers:mean.relate" = "Related Helper Ratio",
                    "SD (Intercept Year)" = "Year",
                    "SD (Intercept Terr)" = "Territory ID",
                    "SD (Intercept NatalNest)" = "Nest ID")
 
 # juvenile survival models
-modelsummary(list("Linear" = O.null.model,
+modelsummary(list("Base" = O.null.model,
                   "Non-Linear" = O.null.2.model,
-                  "Linear" = O.model,
-                  "Non-Linear" = O.2.model),
+                  "Helper Sex" = O.sex.model,
+                  "Helper Relatedness" = O.relate.model),
              stars = c("*" = 0.05, "**" = 0.01, "***" = 0.001),
              coef_map = OSurvModelKey,
              gof_omit = "ICC",
              output = "flextable") %>%
-  hline(c(22, 27)) %>%
-  add_header_row(top = TRUE, values = c("", "Base Model", "Full Model"), 
-                 colwidths = c(1, 2, 2)) %>%
+  hline(c(18, 21)) %>%
   autofit() %>%
   save_as_docx(path = "figures/OSModelTable_20250714.docx")
 
@@ -370,18 +415,16 @@ ARSModelKey <- c("(Intercept)" = "Intercept",
                  "ha" = "Territory Area",
                  "num.helpers" = "# of Helpers",
                  "I(num.helpers^2)" = "# of Helpers^2",
-                 "num.helpers:mean.relate" = "Related Helper Ratio",
-                 "I(num.helpers^2):mean.relate" = "Related Helper Ratio\nNon-Linear Term",
                  "num.helpers:sex.ratio" = "Helper Sex Ratio",
-                 "I(num.helpers^2):sex.ratio" = "Helper Sex Ratio\n Non-Linear Term",
+                 "num.helpers:mean.relate" = "Related Helper Ratio",
                  "SD (Intercept Year)" = "Year",
                  "SD (Intercept Terr)" = "Territory ID",
                  "SD (Intercept pairID)" = "Pair ID")
 
-modelsummary(list("Linear" = ARS.null.model,
+modelsummary(list("Base" = ARS.null.model,
                   "Non-Linear" = ARS.null.2.model,
-                  "Linear" = ARS.model,
-                  "Non-Linear" = ARS.2.model),
+                  "Helper Sex" = ARS.sex.model,
+                  "Helper Relatedness" = ARS.relate.model),
              stars = c("*" = 0.05, "**" = 0.01, "***" = 0.001),
              coef_map = ARSModelKey,
              gof_omit = "ICC",
@@ -390,9 +433,7 @@ modelsummary(list("Linear" = ARS.null.model,
                            "zero_inflated" = "Zero-Inflated",
                            "dispersion" = "Dispersion"),
              output = "flextable") %>%
-  hline(c(22, 25, 28)) %>%
-  add_header_row(top = TRUE, values = c("", "", "Base Model", "Full Model"), 
-                 colwidths = c(1, 1, 2, 2)) %>%
+  hline(c(18, 21, 24)) %>%
   autofit() %>%
   save_as_docx(path = "figures/ARSModelTable_20250714.docx")
 
@@ -404,30 +445,72 @@ OSurvModelKey.ha <- c("(Intercept)" = "Intercept",
                    "ha" = "Territory Area",
                    "num.helpers" = "# of Helpers",
                    "I(num.helpers^2)" = "# of Helpers^2",
-                   "num.helpers:mean.relate" = "Related Helper Ratio",
-                   "I(num.helpers^2):mean.relate" = "Related Helper Ratio\nNon-Linear Term",
                    "num.helpers:sex.ratio" = "Helper Sex Ratio",
-                   "I(num.helpers^2):sex.ratio" = "Helper Sex Ratio\n Non-Linear Term",
+                   "num.helpers:mean.relate" = "Related Helper Ratio",
                   "num.helpers:ha" = "# of Helpers\nTerritory Area Interaction",
+            "ha:I(num.helpers^2)" = "# of Helper^2\nTerritory Area Interaction",
+  "num.helpers:ha:sex.ratio" = "Helper Sex Ratio\nTerritory Area Interaction",
 "num.helpers:ha:mean.relate" = "Related Helper Ratio\nTerritory Area Interaction",
-"num.helpers:ha:sex.ratio" = "Helper Sex Ratio\nTerritory Area Interaction",
                    "SD (Intercept Year)" = "Year",
                    "SD (Intercept Terr)" = "Territory ID",
                    "SD (Intercept NatalNest)" = "Nest ID")
 
 # juvenile survival models
-modelsummary(list("Null Model" = O.null.ha.model,
-                  "Full Model" = O.ha.model,
-                  "Relatedness\nModel" = O.ha.relate.model,
-                  "Sex Model" = O.ha.sex.model),
+modelsummary(list("Base" = O.null.ha.model,
+                  "Non-Linear" = O.null.2.ha.model,
+                  "Helper Sex" = O.ha.sex.model,
+                  "Helper Relatedness" = O.ha.relate.model),
              stars = c("*" = 0.05, "**" = 0.01, "***" = 0.001),
              coef_map = OSurvModelKey.ha,
              gof_omit = "ICC",
              output = "flextable") %>%
-  hline(c(22, 25)) %>%
+  hline(c(26, 29)) %>%
   autofit() %>%
   save_as_docx(path = "figures/OS_ha_ModelTable_20250714.docx")
 
+
+# Make overall AIC table
+## make funciton to quickly extract AIC
+AIC_summary <- function(..., response){
+  AIC(...) %>%
+    mutate(response = response,
+           model = c("Base", "Non-Linear", "Helper Sex", 
+                     "Helper Relatedness"))
+}
+
+# create table
+AIC_summary(B.M.null.model, B.M.null.2.model, B.M.sex.model, B.M.relate.model,
+            response = "Male Breeder Survival") %>%
+  bind_rows(AIC_summary(B.F.null.model, B.F.null.2.model, 
+                        B.F.sex.model, B.F.relate.model,
+                        response = "Female Breeder Survival")) %>%
+  bind_rows(AIC_summary(O.null.model, O.null.2.model, 
+                        O.sex.model, O.relate.model,
+                        response = "Offspring Survival")) %>%
+  bind_rows(AIC_summary(O.null.ha.model, O.null.2.ha.model, 
+                        O.ha.sex.model, O.ha.relate.model,
+                        response = "Offspring Survival") %>%
+              mutate(model = paste("Area X", model))) %>%
+  bind_rows(AIC_summary(ARS.null.model, ARS.null.2.model, 
+                        ARS.sex.model, ARS.relate.model,
+                        response = "Nestling Production")) %>%
+  group_by(response) %>%
+  # calculate delta AIC for each set of models
+  mutate(dAIC = round(AIC - min(AIC), 2),
+         AIC = round(AIC, 2),
+         response = factor(response, levels = c("Male Breeder Survival", 
+                                                "Female Breeder Survival", 
+                                                "Offspring Survival", 
+                                                "Nestling Production"))) %>%
+  arrange(response, dAIC) %>%
+  select("Response" = response, 
+         "Model" = model, 
+         "Degrees of Freedom" = df, AIC, dAIC) %>%
+  as_grouped_data("Response") %>%
+  flextable() %>%
+  hline(c(5, 10, 19)) %>%
+  autofit() %>%
+  save_as_docx(path = "figures/AICTable_20250714.docx")
 
 
 #### Helper summary statistics
@@ -437,14 +520,14 @@ filter(Breeders.input,
        !Year %in% c(1994, 1997, 1999),
        num.helpers > 0) %>%
   {n_distinct(.$TerrYr)}
-# 784
+# 787
 
 filter(Breeders.input,
        !Year %in% c(1994, 1997, 1999)) %>%
   {n_distinct(.$TerrYr)}
-# 1488
+# 1505
 
-# 52.6% of territories have helpers
+# 52.3% of territories have helpers
 
 # average number of helpers
 filter(Breeders.input,
@@ -464,6 +547,17 @@ filter(Breeders.input,
 
 # 68% of helpers are related to their breeders
 
+filter(Offspring.input %>% group_by(NatalNest) %>%
+         summarize(Year = Year[1], num.helpers = num.helpers[1],
+                   mean.relate = max(mean.relate)),
+       !Year %in% c(1994, 1997, 1999),
+       num.helpers > 0) %>%
+  mutate(related.helpers = mean.relate*num.helpers) %>%
+  {sum(.$related.helpers)/sum(.$num.helpers)}
+
+# 84% of helpers are related to their breeders
+
+
 ### Correlations with helper presence
 
 # check for differences in relatedness between helpers and male and females
@@ -471,14 +565,14 @@ wilcox.test(mean.relate ~ Sex,
             Breeders.input %>% 
               filter(!Year %in% c(1994, 1997, 1999)) %>% 
               filter(!is.na(mean.relate)))
-# W = 265401, p-value = 0.0009
+# W = 273546, p-value = 0.0005
 
 # calculate mean relatedness between breeders and helpers
 group_by(Breeders.input %>% 
            filter(!Year %in% c(1994, 1997, 1999)) %>% 
            filter(!is.na(mean.relate)), Sex) %>%
   summarize(relation.mean = mean(mean.relate), relation.sd = sd(mean.relate))
-# F mean = 0.624, sd = 0.450
+# F mean = 0.620, sd = 0.452
 # M mean = 0.699, sd = 0.421
 
 # check correlation between breeder age and number of helpers
@@ -495,7 +589,7 @@ cor.test(filter(Breeders.input %>%
          filter(Breeders.input %>% 
                   filter(!Year %in% c(1994, 1997, 1999)))$mean.relate,
          method = "spearman")
-# rho = 0.4380, p-value < 2.2e-16
+# rho = 0.4434, p-value < 2.2e-16
 
 # check correlation between breeder age and sex ratio of helpers
 cor.test(filter(Breeders.input %>% 
@@ -503,7 +597,7 @@ cor.test(filter(Breeders.input %>%
          filter(Breeders.input %>% 
                   filter(!Year %in% c(1994, 1997, 1999)))$sex.ratio,
          method = "spearman")
-# rho = -0.0419, p-value = 0.1015
+# rho = -0.0382, p-value = 0.1329
 
 # check correlation between territory size and number of helpers
 cor.test(filter(Breeders.input %>% 
@@ -511,7 +605,7 @@ cor.test(filter(Breeders.input %>%
          filter(Breeders.input %>% 
                   filter(!Year %in% c(1994, 1997, 1999)))$num.helpers,
          method = "spearman")
-# rho = 0.1882, p-value < 2.2e-16
+# rho = 0.1935, p-value < 2.2e-16
 
 # check correlation between territory size and proportion of related helpers
 cor.test(filter(Breeders.input %>% 
@@ -519,7 +613,7 @@ cor.test(filter(Breeders.input %>%
          filter(Breeders.input %>% 
                   filter(!Year %in% c(1994, 1997, 1999)))$mean.relate,
          method = "spearman")
-# rho = 0.0359, p-value = 0.1502
+# rho = 0.0381, p-value = 0.134
 
 # check correlation between territory size and sex ratio of helpers
 cor.test(filter(Breeders.input %>% 
@@ -527,7 +621,7 @@ cor.test(filter(Breeders.input %>%
          filter(Breeders.input %>% 
                   filter(!Year %in% c(1994, 1997, 1999)))$sex.ratio,
          method = "spearman")
-# rho = 0.0647, p-value = 0.01146
+# rho = 0.0656, p-value = 0.0098
 
 # check correlation between number of helpers and
 # proportion of related helpers to nestlings
@@ -579,20 +673,20 @@ Off.surv.ha.plot <- ggplot(Offspring.input %>%
   # add vertical lines indicating quartiles
   geom_vline(xintercept = c(9.8, 14.1, 17.7)) +
   theme_minimal() +
-  theme(text = element_text(size = 9),
+  theme(text = element_text(size = 12),
         panel.border = element_rect(fill = NA),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank())
 
 ggsave(filename = "figures/FigureS2_20250714.pdf",
        Off.surv.ha.plot,
-       width = 6.5,
+       width = 5,
        height = 3,
        units = "in")
 
 ggsave(filename = "figures/FigureS2_20250714.png",
        Off.surv.ha.plot,
-       width = 6.5,
+       width = 5,
        height = 3,
        units = "in",
        dpi = 500)
@@ -633,7 +727,7 @@ HelpCount.Sex <- ggplot(HelperCountData, aes(x = as.factor(sex.helpers),
                                                M = "Male Breeders",
                                                N = "Nests with Nestlings"))) +
   theme_minimal() +
-  theme(text = element_text(size = 9),
+  theme(text = element_text(size = 12),
         panel.border = element_rect(fill = NA),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank())
@@ -651,7 +745,7 @@ HelpCount.relate <- ggplot(HelperCountData, aes(x = as.factor(relate.helpers),
                                                 M = "Male Breeders",
                                                 N = "Nests with Nestlings"))) +
   theme_minimal() +
-  theme(text = element_text(size = 9),
+  theme(text = element_text(size = 12),
         panel.border = element_rect(fill = NA),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank())
@@ -662,7 +756,7 @@ HelpCount.plot <- HelpCount.Sex/HelpCount.relate + plot_annotation(tag_levels = 
 
 ggsave(filename = "figures/FigureS1_20250714.pdf",
        HelpCount.plot,
-       width = 6.5,
+       width = 6.96,
        height = 5,
        units = "in")
 

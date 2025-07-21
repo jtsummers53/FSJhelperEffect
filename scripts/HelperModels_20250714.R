@@ -17,9 +17,7 @@ Offspring.data <- Offspring.input %>%
   # remove years with >10% territories with unsexed helpers
   filter(!Year %in% c(1994, 1997, 1999)) %>%
   # set NAs to 0 for records without helpers
-  replace_na(list(mean.relate = 0, sex.ratio = 0)) %>%
-  # scale non-focal fixed effects
-  mutate_at(c("ha", "HatchDate", "pairYear", "pedF"), scale)
+  replace_na(list(mean.relate = 0, sex.ratio = 0))
 
 # create models
 # Base model
@@ -29,35 +27,38 @@ O.null.model <- glmmTMB(surv ~ num.helpers +
                         family = "binomial",
                         data = Offspring.data)
 
-# Base model with non-linear effects
+# Non-linear model
 O.null.2.model <- glmmTMB(surv ~ num.helpers + I(num.helpers^2) +
                           pedF + HatchDate + ha + pairYear +
                           (1|Terr) + (1|Year) + (1|NatalNest),
                         family = "binomial",
                         data = Offspring.data)
 
-# Full model
-O.model <- glmmTMB(surv ~ num.helpers + 
-                     num.helpers:mean.relate +
-                     num.helpers:sex.ratio +
+# Relatedness model
+O.relate.model <- glmmTMB(surv ~ num.helpers +
+                            num.helpers:mean.relate +
                      pedF + HatchDate + ha + pairYear +
                      (1|Terr) + (1|Year) + (1|NatalNest),
                    family = "binomial",
                    data = Offspring.data)
 
-# Full model with non-linear effects
-O.2.model <- glmmTMB(surv ~ num.helpers + I(num.helpers^2) +
-                       num.helpers:mean.relate +
-                       I(num.helpers^2):mean.relate +
-                       num.helpers:sex.ratio +
-                       I(num.helpers^2):sex.ratio +
-                       pedF + HatchDate + ha + pairYear + 
-                       (1|Terr) + (1|Year) + (1|NatalNest),
-                     family = "binomial",
-                     data = Offspring.data)
+# Sex model
+O.sex.model <- glmmTMB(surv ~ num.helpers + 
+                            num.helpers:sex.ratio +
+                            pedF + HatchDate + ha + pairYear +
+                         (1|Terr) + (1|Year) + (1|NatalNest),
+                          family = "binomial",
+                          data = Offspring.data)
 
 # compare models
-anova(O.null.model, O.null.2.model, O.model, O.2.model)
+anova(O.null.model, O.null.2.model)
+
+anova(O.null.model, O.relate.model)
+
+anova(O.null.model, O.sex.model)
+
+anova(O.null.model, O.null.2.model,
+      O.relate.model, O.sex.model)
 
 # test model fit
 O.null.sim <- simulateResiduals(O.null.model)
@@ -68,24 +69,15 @@ O.null.2.sim <- simulateResiduals(O.null.2.model)
 testResiduals(O.null.2.sim)
 # no significant issues
 
-O.sim <- simulateResiduals(O.model)
-testResiduals(O.sim)
+O.relate.sim <- simulateResiduals(O.relate.model)
+testResiduals(O.relate.sim)
 # no significant issues
 
-O.2.sim <- simulateResiduals(O.2.model)
-testResiduals(O.2.sim)
+O.sex.sim <- simulateResiduals(O.sex.model)
+testResiduals(O.sex.sim)
 # no significant issues
 
 ### POST-HOC TERRITORY AREA INTERACTION
-
-# Full model with territory interaction
-O.ha.model <- glmmTMB(surv ~ num.helpers*ha + 
-                          num.helpers:mean.relate*ha +
-                          num.helpers:sex.ratio*ha +
-                          pedF + HatchDate + pairYear + 
-                          (1|Terr) + (1|Year) + (1|NatalNest),
-                        family = "binomial",
-                        data = Offspring.data)
 
 # Sex-only model with territory interaction
 O.ha.sex.model <- glmmTMB(surv ~ num.helpers*ha + 
@@ -110,18 +102,20 @@ O.null.ha.model <- glmmTMB(surv ~ num.helpers*ha +
                         family = "binomial",
                         data = Offspring.data)
 
+# Non-linear model with territory interaction
+O.null.2.ha.model <- glmmTMB(surv ~ num.helpers*ha + I(num.helpers^2)*ha +
+                             pedF + HatchDate + pairYear + 
+                             (1|Terr) + (1|Year) + (1|NatalNest),
+                           family = "binomial",
+                           data = Offspring.data)
+
 # compare models
 anova(O.null.model, O.null.ha.model, O.ha.relate.model,
-      O.ha.sex.model,
-      O.ha.model)
+      O.ha.sex.model, O.null.2.ha.model)
 
 # test model fit
 O.null.ha.sim <- simulateResiduals(O.null.ha.model)
 testResiduals(O.null.ha.sim)
-# no significant issues
-
-O.ha.sim <- simulateResiduals(O.ha.model)
-testResiduals(O.ha.sim)
 # no significant issues
 
 O.ha.sex.sim <- simulateResiduals(O.ha.sex.model)
@@ -132,6 +126,10 @@ O.ha.relate.sim <- simulateResiduals(O.ha.relate.model)
 testResiduals(O.ha.sex.sim)
 # no significant issues
 
+O.null.2.ha.sim <- simulateResiduals(O.null.2.ha.model)
+testResiduals(O.null.2.ha.sim)
+# no significant issues
+
 # BREEDER SURVIVAL
 
 # separate dataset by sex
@@ -139,17 +137,13 @@ Breeders.Census.F <- filter(Breeders.input, Sex == "F") %>%
   # remove years with >10% territories with unsexed helpers
   filter(!Year %in% c(1994, 1997, 1999)) %>%
   # set NAs to 0 for records without helpers
-  replace_na(list(mean.relate = 0, sex.ratio = 0)) %>%
-  # scale non-focal fixed effects
-  mutate_at(c("ha", "pedF", "age"), scale)
+  replace_na(list(mean.relate = 0, sex.ratio = 0))
 
 Breeders.Census.M <- filter(Breeders.input, Sex == "M") %>%
   # remove years with >10% territories with unsexed helpers
   filter(!Year %in% c(1994, 1997, 1999)) %>%
   # set NAs to 0 for records without helpers
-  replace_na(list(mean.relate = 0, sex.ratio = 0)) %>%
-  # scale non-focal fixed effects
-  mutate_at(c("ha", "pedF", "age"), scale)
+  replace_na(list(mean.relate = 0, sex.ratio = 0))
 
 # create half-normal random effect prior
 Bprior <- data.frame(prior = "normal(0, 1)",
@@ -172,7 +166,7 @@ B.M.null.model <- glmmTMB(surv ~ num.helpers +
                           data = Breeders.Census.M,
                           prior = Bprior)
 
-# Base models with non-linear effects
+# Non-linear models
 B.F.null.2.model <- glmmTMB(surv ~ num.helpers + I(num.helpers^2) +
                             pedF + age + I(age^2) + ha +
                               (1|Terr) + (1|Year) + (1|USFWS),
@@ -187,9 +181,25 @@ B.M.null.2.model <- glmmTMB(surv ~ num.helpers + I(num.helpers^2) +
                           data = Breeders.Census.M,
                           prior = Bprior)
 
-# Full models
-B.F.model <- glmmTMB(surv ~ num.helpers + 
+# Relatedness models
+B.F.relate.model <- glmmTMB(surv ~ num.helpers + 
                        num.helpers:mean.relate +
+                       pedF + age + I(age^2) + ha +
+                       (1|Terr) + (1|Year) + (1|USFWS),
+                     family = "binomial",
+                     data = Breeders.Census.F,
+                     prior = Bprior)
+
+B.M.relate.model <- glmmTMB(surv ~ num.helpers + 
+                       num.helpers:mean.relate +
+                       pedF + age + I(age^2) + ha +
+                       (1|Terr) + (1|Year) + (1|USFWS),
+                     family = "binomial",
+                     data = Breeders.Census.M,
+                     prior = Bprior)
+
+# Sex models
+B.F.sex.model <- glmmTMB(surv ~ num.helpers + 
                        num.helpers:sex.ratio +
                        pedF + age + I(age^2) + ha +
                        (1|Terr) + (1|Year) + (1|USFWS),
@@ -197,8 +207,7 @@ B.F.model <- glmmTMB(surv ~ num.helpers +
                      data = Breeders.Census.F,
                      prior = Bprior)
 
-B.M.model <- glmmTMB(surv ~ num.helpers + 
-                       num.helpers:mean.relate +
+B.M.sex.model <- glmmTMB(surv ~ num.helpers + 
                        num.helpers:sex.ratio +
                        pedF + age + I(age^2) + ha +
                        (1|Terr) + (1|Year) + (1|USFWS),
@@ -206,32 +215,12 @@ B.M.model <- glmmTMB(surv ~ num.helpers +
                      data = Breeders.Census.M,
                      prior = Bprior)
 
-# Full models with non-linear effects
-B.F.2.model <- glmmTMB(surv ~ num.helpers + I(num.helpers^2) +
-                         num.helpers:mean.relate +
-                         I(num.helpers^2):mean.relate +
-                         num.helpers:sex.ratio +
-                         I(num.helpers^2):sex.ratio +
-                         pedF + age + I(age^2) + ha +
-                         (1|Terr) + (1|Year) + (1|USFWS),
-                       family = "binomial",
-                       data = Breeders.Census.F,
-                       prior = Bprior)
-
-B.M.2.model <- glmmTMB(surv ~ num.helpers + I(num.helpers^2) +
-                         num.helpers:mean.relate +
-                         I(num.helpers^2):mean.relate +
-                         num.helpers:sex.ratio +
-                         I(num.helpers^2):sex.ratio +
-                         pedF + age + I(age^2) + ha +
-                          (1|Terr) + (1|Year) + (1|USFWS),
-                       family = "binomial",
-                       data = Breeders.Census.M,
-                       prior = Bprior)
-
 # compare models
-anova(B.F.null.model, B.F.model, B.F.2.model, B.F.null.2.model)
-anova(B.M.null.model, B.M.model, B.M.2.model, B.M.null.2.model)
+anova(B.F.null.model, B.F.null.2.model,
+      B.F.relate.model, B.F.sex.model)
+
+anova(B.M.null.model, B.M.null.2.model,
+      B.M.relate.model, B.M.sex.model)
 
 # test model fit
 B.F.null.sim <- simulateResiduals(B.F.null.model)
@@ -248,18 +237,18 @@ testResiduals(B.F.null.2.sim)
 testOutliers(B.F.null.2.sim, type = "bootstrap")
 # no significant issues
 
-B.F.sim <- simulateResiduals(B.F.model)
-testResiduals(B.F.sim)
+B.F.relate.sim <- simulateResiduals(B.F.relate.model)
+testResiduals(B.F.relate.sim)
 # DHARMa has issues with binomial for testing outliers,
 # it is recommended to re-run with type = "bootstrap"
-testOutliers(B.F.sim, type = "bootstrap")
+testOutliers(B.F.relate.sim, type = "bootstrap")
 # no significant issues
 
-B.F.2.sim <- simulateResiduals(B.F.2.model)
-testResiduals(B.F.2.sim)
+B.F.sex.sim <- simulateResiduals(B.F.sex.model)
+testResiduals(B.F.sex.sim)
 # DHARMa has issues with binomial for testing outliers,
 # it is recommended to re-run with type = "bootstrap"
-testOutliers(B.F.2.sim, type = "bootstrap")
+testOutliers(B.F.relate.sim, type = "bootstrap")
 # no significant issues
 
 B.M.null.sim <- simulateResiduals(B.M.null.model)
@@ -276,18 +265,18 @@ testResiduals(B.M.null.2.sim)
 testOutliers(B.M.null.2.sim, type = "bootstrap")
 # no significant issues
 
-B.M.sim <- simulateResiduals(B.M.model)
-testResiduals(B.M.sim)
+B.M.relate.sim <- simulateResiduals(B.M.relate.model)
+testResiduals(B.M.relate.sim)
 # DHARMa has issues with binomial for testing outliers,
 # it is recommended to re-run with type = "bootstrap"
-testOutliers(B.M.sim, type = "bootstrap")
+testOutliers(B.M.null.sim, type = "bootstrap")
 # no significant issues
 
-B.M.2.sim <- simulateResiduals(B.M.2.model)
-testResiduals(B.M.2.sim)
+B.M.sex.sim <- simulateResiduals(B.M.sex.model)
+testResiduals(B.M.sex.sim)
 # DHARMa has issues with binomial for testing outliers,
 # it is recommended to re-run with type = "bootstrap"
-testOutliers(B.M.2.sim, type = "bootstrap")
+testOutliers(B.M.null.sim, type = "bootstrap")
 # no significant issues
 
 # NESTLING PRODUCTION
@@ -295,9 +284,7 @@ NestPairs.data <- replace_na(NestPairs.input,
                              # set NAs to 0 for records without helpers
                              list(mean.relate = 0, sex.ratio = 0)) %>%
   # remove years with >10% territories with unsexed helpers
-  filter(!Year %in% c(1994, 1997, 1999)) %>%
-  # scale non-focal fixed effects
-  mutate_at(c("pairYear", "ha", "pair.pedF", "Month"), scale)
+  filter(!Year %in% c(1994, 1997, 1999))
 
 # test zero-inflation
 ARS.null.model.poisson <- glmmTMB(ARS ~ num.helpers + 
@@ -341,7 +328,7 @@ testDispersion(ARS.null.model)
 
 # create remaining models
 
-# Base model with non-linear effects
+# Non-linear model
 ARS.null.2.model <- glmmTMB(ARS ~ num.helpers + I(num.helpers^2) +
                             pairYear + ha + 
                             pair.pedF + Month +
@@ -350,9 +337,18 @@ ARS.null.2.model <- glmmTMB(ARS ~ num.helpers + I(num.helpers^2) +
                           family = "genpois",
                           data = NestPairs.data)
 
-# Full model
-ARS.model <- glmmTMB(ARS ~ num.helpers + 
+# Relatedness model
+ARS.relate.model <- glmmTMB(ARS ~ num.helpers + 
                        num.helpers:mean.relate +
+                       pairYear + ha + 
+                       pair.pedF + Month +
+                       (1|Year) + (1|Terr) + (1|pairID),
+                     zi = ~ 1,
+                     family = "genpois",
+                     data = NestPairs.data)
+
+# Sex model
+ARS.sex.model <- glmmTMB(ARS ~ num.helpers +
                        num.helpers:sex.ratio +
                        pairYear + ha + 
                        pair.pedF + Month +
@@ -361,21 +357,10 @@ ARS.model <- glmmTMB(ARS ~ num.helpers +
                      family = "genpois",
                      data = NestPairs.data)
 
-# Full model with non-linear effects
-ARS.2.model <- glmmTMB(ARS ~ num.helpers + I(num.helpers^2) +
-                       num.helpers:mean.relate +
-                       I(num.helpers^2):mean.relate +
-                       num.helpers:sex.ratio +
-                       I(num.helpers^2):sex.ratio +
-                       pairYear + ha + 
-                       pair.pedF + Month +
-                       (1|Year) + (1|Terr) + (1|pairID),
-                     zi = ~ 1,
-                     family = "genpois",
-                     data = NestPairs.data)
 
 # compare models
-anova(ARS.null.model, ARS.model, ARS.2.model, ARS.null.2.model)
+anova(ARS.null.model, ARS.null.2.model, ARS.relate.model,
+      ARS.sex.model)
 
 # test model fit
 ARS.null.sim <- simulateResiduals(ARS.null.model)
@@ -386,27 +371,27 @@ ARS.null.2.sim <- simulateResiduals(ARS.null.2.model)
 testResiduals(ARS.null.2.sim)
 # no significant issues
 
-ARS.sim <- simulateResiduals(ARS.model)
-testResiduals(ARS.sim)
+ARS.relate.sim <- simulateResiduals(ARS.relate.model)
+testResiduals(ARS.relate.sim)
 # no significant issues
 
-ARS.2.sim <- simulateResiduals(ARS.2.model)
-testResiduals(ARS.2.sim)
+ARS.sex.sim <- simulateResiduals(ARS.sex.model)
+testResiduals(ARS.sex.sim)
 # no significant issues
 
 # save results
-save(O.null.model, O.model, O.2.model, O.null.2.model,
-     O.null.sim, O.sim, O.2.sim, O.null.2.sim,
+save(O.null.model, O.null.2.model, O.relate.model, O.sex.model,
+     O.null.sim, O.null.2.sim, O.relate.sim, O.sex.sim,
      O.null.ha.model, O.null.ha.sim,
-     O.ha.model, O.ha.sim,
      O.ha.relate.model, O.ha.relate.sim,
      O.ha.sex.model, O.ha.sex.sim,
-     B.M.null.model, B.M.model, B.M.2.model, B.M.null.2.model,
-     B.F.null.model, B.F.model, B.F.2.model, B.F.null.2.model,
-     B.M.null.sim, B.M.sim, B.M.2.sim, B.M.null.2.sim,
-     B.F.null.sim, B.F.sim, B.F.2.sim, B.F.null.2.sim,
-     ARS.null.model, ARS.model, ARS.2.model, 
-     ARS.null.sim, ARS.sim, ARS.2.sim, ARS.null.2.model, ARS.null.2.sim,
+     O.null.2.ha.model, O.null.2.ha.sim,
+     B.M.null.model, B.M.null.2.model, B.M.relate.model, B.M.sex.model,
+     B.F.null.model, B.F.null.2.model, B.F.relate.model, B.F.sex.model,
+     B.M.null.sim, B.M.null.2.sim, B.M.relate.sim, B.M.sex.sim,
+     B.F.null.sim, B.F.null.2.sim, B.F.relate.sim, B.F.sex.sim,
+     ARS.null.model, ARS.relate.model, ARS.sex.model, ARS.null.2.model,
+     ARS.null.sim, ARS.null.2.sim, ARS.relate.sim, ARS.sex.sim,
      Offspring.data,
      Breeders.Census.F, Breeders.Census.M, NestPairs.data,
      file = "data/HelperModels_20250714.rdata")
